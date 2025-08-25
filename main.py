@@ -65,15 +65,18 @@ def find_sublevels(level_file: str):
     return sublevels
 
 # ---------------- RECURSIVE DOWNLOAD ----------------
-def download_with_sublevels(user_id, level_id, out_dir, download_subs):
+def download_with_sublevels(user_id, level_id, out_dir, download_subs=True):
     level_file, level_dir, title = download_level(user_id, level_id, 1, out_dir)
+
     if not download_subs:
         return
+
     sublevels = find_sublevels(level_file)
     if sublevels:
         print(f"[INFO] Found {len(sublevels)} sublevels in {title}")
         sub_dir = os.path.join(level_dir, "sublevels")
         os.makedirs(sub_dir, exist_ok=True)
+
         for sub in sublevels:
             sub_user, sub_level = sub.split(":")
             try:
@@ -98,6 +101,9 @@ def index():
         if query:
             try:
                 results = search_levels(query)
+                # Store the download_subs choice for links
+                for lvl in results:
+                    lvl['download_subs'] = download_subs
             except Exception as e:
                 results = [{"title": f"Error: {e}", "identifier": ""}]
     return render_template_string("""
@@ -117,7 +123,7 @@ def index():
             <li>
                 {{ lvl.title }} ({{ lvl.identifier }})
                 {% if lvl.identifier %}
-                <a href="/download_level/{{ lvl.identifier }}?subs={{ request.form.get('download_subs') }}">Download</a>
+                    <a href="/download_level/{{ lvl.identifier }}?subs={{ 'on' if lvl.download_subs else '' }}">Download</a>
                 {% endif %}
             </li>
         {% endfor %}
@@ -136,10 +142,11 @@ def index():
 @app.route("/download_level/<identifier>")
 def download_level_route(identifier):
     download_subs = request.args.get("subs") == "on"
-    user_id, level_id = identifier.split(":")[:2]
-    out_dir = "Downloads"
-    os.makedirs(out_dir, exist_ok=True)
+
     try:
+        user_id, level_id = identifier.split(":")[:2]
+        out_dir = "Downloads"
+        os.makedirs(out_dir, exist_ok=True)
         download_with_sublevels(user_id, level_id, out_dir, download_subs)
         zip_folder(out_dir, LATEST_FILE)
         return redirect(url_for("index"))
