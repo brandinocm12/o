@@ -27,21 +27,19 @@ def zip_folder(folder_path, zip_name):
     print(f"[+] Zipped {folder_path} → {zip_name}")
 
 # ---------------- LEVEL INFO ----------------
-def get_level_info(user_id: str, level_id: str, access_token: str):
+def get_level_info(user_id: str, level_id: str):
     url = f"{API_BASE}/details/{user_id}/{level_id}"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers)
+    resp = requests.get(url)
     resp.raise_for_status()
     return resp.json()
 
 # ---------------- DOWNLOAD LEVEL ----------------
-def download_level(user_id: str, level_id: str, iteration: int, access_token: str, out_dir="Downloads"):
+def download_level(user_id: str, level_id: str, iteration: int, out_dir="Downloads"):
     url = f"{API_BASE}/download/{user_id}/{level_id}/{iteration}"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers)
+    resp = requests.get(url)
     resp.raise_for_status()
 
-    info = get_level_info(user_id, level_id, access_token)
+    info = get_level_info(user_id, level_id)
     title = info.get("title", "Unknown")
     safe_title = safe_name(title)
 
@@ -67,8 +65,8 @@ def find_sublevels(level_file: str):
     return sublevels
 
 # ---------------- RECURSIVE DOWNLOAD ----------------
-def download_with_sublevels(user_id, level_id, access_token, out_dir, download_subs):
-    level_file, level_dir, title = download_level(user_id, level_id, 1, access_token, out_dir)
+def download_with_sublevels(user_id, level_id, out_dir, download_subs):
+    level_file, level_dir, title = download_level(user_id, level_id, 1, out_dir)
 
     if not download_subs:
         return
@@ -82,15 +80,14 @@ def download_with_sublevels(user_id, level_id, access_token, out_dir, download_s
         for sub in sublevels:
             sub_user, sub_level = sub.split(":")
             try:
-                download_with_sublevels(sub_user, sub_level, access_token, sub_dir, download_subs)
+                download_with_sublevels(sub_user, sub_level, sub_dir, download_subs)
             except Exception as e:
                 print(f"[ERR] Could not download sublevel {sub}: {e}")
 
 # ---------------- SEARCH LEVELS ----------------
-def search_levels(query, access_token):
+def search_levels(query):
     url = f"{API_BASE}/list?type=search&search_term={query}"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers)
+    resp = requests.get(url)
     resp.raise_for_status()
     return resp.json()
 
@@ -98,13 +95,13 @@ def search_levels(query, access_token):
 @app.route("/", methods=["GET", "POST"])
 def index():
     results = None
+    download_subs = False
     if request.method == "POST":
         query = request.form.get("query")
-        token = request.form.get("access_token")
         download_subs = request.form.get("download_subs") == "on"
-        if query and token:
+        if query:
             try:
-                results = search_levels(query, token)
+                results = search_levels(query)
             except Exception as e:
                 results = [{"title": f"Error: {e}", "identifier": ""}]
     return render_template_string("""
@@ -113,7 +110,6 @@ def index():
     <h2>Search Levels</h2>
     <form method="POST">
         Search term: <input type="text" name="query" required>
-        Access Token: <input type="text" name="access_token" required>
         Download sublevels? <input type="checkbox" name="download_subs">
         <input type="submit" value="Search">
     </form>
@@ -125,7 +121,7 @@ def index():
             <li>
                 {{ lvl.title }} ({{ lvl.identifier }})
                 {% if lvl.identifier %}
-                <a href="/download_level/{{ lvl.identifier }}?token={{ request.form.get('access_token') }}&subs={{ request.form.get('download_subs') }}">Download</a>
+                <a href="/download_level/{{ lvl.identifier }}?subs={{ 'on' if download_subs else 'off' }}">Download</a>
                 {% endif %}
             </li>
         {% endfor %}
@@ -139,20 +135,16 @@ def index():
     {% else %}
         <p>No file uploaded yet.</p>
     {% endif %}
-    """, results=results, exists=os.path.exists(LATEST_FILE))
+    """, results=results, exists=os.path.exists(LATEST_FILE), download_subs=download_subs)
 
 @app.route("/download_level/<identifier>")
 def download_level_route(identifier):
-    token = request.args.get("token")
     download_subs = request.args.get("subs") == "on"
-    if not token:
-        return "Missing access token", 400
-
     user_id, level_id = identifier.split(":")[:2]
     out_dir = "Downloads"
     os.makedirs(out_dir, exist_ok=True)
     try:
-        download_with_sublevels(user_id, level_id, token, out_dir, download_subs)
+        download_with_sublevels(user_id, level_id, out_dir, download_subs)
         zip_folder(out_dir, LATEST_FILE)
         return redirect(url_for("index"))
     except Exception as e:
