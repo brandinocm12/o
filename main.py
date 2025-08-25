@@ -67,16 +67,13 @@ def find_sublevels(level_file: str):
 # ---------------- RECURSIVE DOWNLOAD ----------------
 def download_with_sublevels(user_id, level_id, out_dir, download_subs):
     level_file, level_dir, title = download_level(user_id, level_id, 1, out_dir)
-
     if not download_subs:
         return
-
     sublevels = find_sublevels(level_file)
     if sublevels:
         print(f"[INFO] Found {len(sublevels)} sublevels in {title}")
         sub_dir = os.path.join(level_dir, "sublevels")
         os.makedirs(sub_dir, exist_ok=True)
-
         for sub in sublevels:
             sub_user, sub_level = sub.split(":")
             try:
@@ -86,7 +83,7 @@ def download_with_sublevels(user_id, level_id, out_dir, download_subs):
 
 # ---------------- SEARCH LEVELS ----------------
 def search_levels(query):
-    url = f"{API_BASE}/list?type=search&search_term={query}"
+    url = f"{API_BASE}/list?max_format_version=15&type=search&search_term={query}"
     resp = requests.get(url)
     resp.raise_for_status()
     return resp.json()
@@ -95,7 +92,6 @@ def search_levels(query):
 @app.route("/", methods=["GET", "POST"])
 def index():
     results = None
-    download_subs = False
     if request.method == "POST":
         query = request.form.get("query")
         download_subs = request.form.get("download_subs") == "on"
@@ -121,7 +117,7 @@ def index():
             <li>
                 {{ lvl.title }} ({{ lvl.identifier }})
                 {% if lvl.identifier %}
-                <a href="/download_level/{{ lvl.identifier }}?subs={{ 'on' if download_subs else 'off' }}">Download</a>
+                <a href="/download_level/{{ lvl.identifier }}?subs={{ request.form.get('download_subs') }}">Download</a>
                 {% endif %}
             </li>
         {% endfor %}
@@ -135,7 +131,7 @@ def index():
     {% else %}
         <p>No file uploaded yet.</p>
     {% endif %}
-    """, results=results, exists=os.path.exists(LATEST_FILE), download_subs=download_subs)
+    """, results=results, exists=os.path.exists(LATEST_FILE))
 
 @app.route("/download_level/<identifier>")
 def download_level_route(identifier):
@@ -149,14 +145,6 @@ def download_level_route(identifier):
         return redirect(url_for("index"))
     except Exception as e:
         return f"Error: {e}", 500
-
-@app.route("/upload", methods=["POST"])
-def upload():
-    if "file" not in request.files:
-        return "No file part", 400
-    file = request.files["file"]
-    file.save(LATEST_FILE)
-    return "Upload successful", 200
 
 @app.route("/download")
 def download():
