@@ -42,14 +42,15 @@ def get_level_info(user_id: str, level_id: str):
     return resp.json()
 
 # ---------------- DOWNLOAD LEVEL ----------------
-def download_level(user_id: str, level_id: str, iteration: int, out_dir="Downloads"):
+def download_level(user_id: str, level_id: str, out_dir="Downloads"):
+    info = get_level_info(user_id, level_id)
+    title = info.get("title", "Unknown")
+    iteration = info.get("iteration", 1)
+    safe_title = safe_name(title)
+
     url = f"{API_BASE}/download/{user_id}/{level_id}/{iteration}"
     resp = requests.get(url)
     resp.raise_for_status()
-
-    info = get_level_info(user_id, level_id)
-    title = info.get("title", "Unknown")
-    safe_title = safe_name(title)
 
     level_dir = os.path.join(out_dir, f"{safe_title}_{level_id}")
     os.makedirs(level_dir, exist_ok=True)
@@ -58,7 +59,7 @@ def download_level(user_id: str, level_id: str, iteration: int, out_dir="Downloa
     with open(filename, "wb") as f:
         f.write(resp.content)
 
-    log(f"[OK] Downloaded {title} ({level_id}) → {filename}")
+    log(f"[OK] Downloaded {title} ({level_id}) iteration={iteration} → {filename}")
     return filename, level_dir, title
 
 # ---------------- FIND SUBLEVELS ----------------
@@ -75,7 +76,7 @@ def find_sublevels(level_file: str):
 
 # ---------------- RECURSIVE DOWNLOAD ----------------
 def download_with_sublevels(user_id, level_id, out_dir, download_subs):
-    filename, level_dir, title = download_level(user_id, level_id, 1, out_dir)
+    filename, level_dir, title = download_level(user_id, level_id, out_dir)
 
     if not download_subs:
         return
@@ -148,8 +149,9 @@ def index():
     {% if exists %}
         <p>Latest file available:</p>
         <a href="/download"><button>Download Latest ZIP</button></a>
+        <a href="/reset"><button>Reset ZIP + Clear Logs</button></a>
     {% else %}
-        <p>No file uploaded yet.</p>
+        <p>No file available yet.</p>
     {% endif %}
 
     <script>
@@ -193,6 +195,16 @@ def download():
     if not os.path.exists(LATEST_FILE):
         return "No file available", 404
     return send_file(LATEST_FILE, as_attachment=True)
+
+@app.route("/reset")
+def reset():
+    logs.clear()
+    if os.path.exists(LATEST_FILE):
+        os.remove(LATEST_FILE)
+        log("[RESET] Deleted latest.zip")
+    else:
+        log("[RESET] No zip file to delete")
+    return redirect(url_for("index"))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
