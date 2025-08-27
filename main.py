@@ -74,8 +74,20 @@ def find_sublevels(level_file: str):
                 sublevels.append(match.group(1).decode('utf-8'))
     return sublevels
 
-# ---------------- RECURSIVE DOWNLOAD ----------------
-def download_with_sublevels(user_id, level_id, out_dir, download_subs):
+# ---------------- RECURSIVE DOWNLOAD (with cycle guard) ----------------
+def download_with_sublevels(user_id, level_id, out_dir, download_subs, visited=None):
+    """
+    visited: set of 'user:level' strings to avoid cycles.
+    """
+    if visited is None:
+        visited = set()
+
+    ident = f"{user_id}:{level_id}"
+    if ident in visited:
+        log(f"[SKIP] Already processed {ident} (cycle/duplicate detected)")
+        return
+    visited.add(ident)
+
     filename, level_dir, title = download_level(user_id, level_id, out_dir)
 
     if not download_subs:
@@ -90,7 +102,8 @@ def download_with_sublevels(user_id, level_id, out_dir, download_subs):
         for sub in sublevels:
             sub_user, sub_level = sub.split(":")
             try:
-                download_with_sublevels(sub_user, sub_level, sub_dir, download_subs)
+                # pass the same visited set to keep global per-download state
+                download_with_sublevels(sub_user, sub_level, sub_dir, download_subs, visited)
             except Exception as e:
                 log(f"[ERR] Could not download sublevel {sub}: {e}")
 
@@ -171,7 +184,9 @@ def download_level_route(identifier):
     out_dir = "Downloads"
     os.makedirs(out_dir, exist_ok=True)
     try:
-        download_with_sublevels(user_id, level_id, out_dir, download_subs)
+        # start each run with a fresh visited set so repeats are tracked per-run
+        visited = set()
+        download_with_sublevels(user_id, level_id, out_dir, download_subs, visited)
         zip_folder(out_dir, LATEST_FILE)
         return redirect(url_for("index"))
     except Exception as e:
